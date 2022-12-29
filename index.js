@@ -39,7 +39,7 @@ updateData();
 if (config.updateEveryMs) {
 	setInterval(() => {
 		updateData();
-	}, config.updateEveryMs).unref();
+	}, config.updateEveryMs);
 }
 
 /**
