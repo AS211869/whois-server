@@ -1,5 +1,6 @@
 {
 	"port": 43,
+	"updateEveryMs": "900000",
 	"ipam": {
 		"enabled": false,
 		"url": "https://ipam.example.com/api/",

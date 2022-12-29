@@ -16,18 +16,31 @@ var domains = {};
 /** @type {Object.<string, import('./ASN.js')>} */
 var asn = {};
 
-addresses.push(...util.loadIPData('ipv4'));
-addresses.push(...util.loadIPData('ipv6'));
-domains = util.loadDomainData();
-asn = util.loadASNData();
+function updateData() {
+	addresses = [];
+	domains = {};
+	asn = {};
+	addresses.push(...util.loadIPData('ipv4'));
+	addresses.push(...util.loadIPData('ipv6'));
+	domains = util.loadDomainData();
+	asn = util.loadASNData();
 
-util.loadIPAMData(function(err, data) {
-	if (err) {
-		return console.error(err);
-	}
+	util.loadIPAMData(function(err, data) {
+		if (err) {
+			return console.error(err);
+		}
 
-	addresses.push(...data);
-});
+		addresses.push(...data);
+	});
+}
+
+updateData();
+
+if (config.updateEveryMs) {
+	setInterval(() => {
+		updateData();
+	}, config.updateEveryMs).unref();
+}
 
 /**
  * @param {net.Socket} conn The connection
