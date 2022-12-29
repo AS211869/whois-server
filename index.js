@@ -21,6 +21,14 @@ addresses.push(...util.loadIPData('ipv6'));
 domains = util.loadDomainData();
 asn = util.loadASNData();
 
+util.loadIPAMData(function(err, data) {
+	if (err) {
+		return console.error(err);
+	}
+
+	addresses.push(...data);
+});
+
 /**
  * @param {net.Socket} conn The connection
  * @param {string} query The query

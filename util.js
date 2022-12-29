@@ -1,7 +1,9 @@
 const path = require('path');
 const fs = require('fs');
 const ipAddress = require('ip-address');
+const axios = require('axios');
 
+const config = require('./config.json');
 const Address = require('./Address.js');
 const Domain = require('./Domain.js');
 const ASN = require('./ASN.js');
@@ -97,8 +99,67 @@ function loadASNData() {
 	return asn;
 }
 
+function loadIPAMData(cb) {
+	if (!config.ipam.enabled) {
+		return cb(null, []);
+	}
+
+	axios.get(`${config.ipam.url}${config.ipam.appId}/subnets/`, {
+		headers: {
+			token: config.ipam.token
+		}
+	}).then(resp => {
+		var d = resp.data;
+		if (!d.success) {
+			return cb(`An error occurred while getting data from IPAM. Error code: ${d.code}`);
+		}
+
+		var addresses = [];
+
+		for (var i = 0; i < d.data.length; i++) {
+			var thisAddressString = `${d.data[i].subnet}/${d.data[i].mask}`;
+			try {
+				var thisAddress;
+
+				if (thisAddressString.includes(':')) {
+					thisAddress = new ipAddress.Address6(thisAddressString);
+				} else {
+					thisAddress = new ipAddress.Address4(thisAddressString);
+				}
+
+				var ipamData = [];
+				ipamData.push(`Network: ${d.data[i].subnet}/${d.data[i].mask}`);
+
+				if (d.data[i].description) {
+					ipamData.push(`Description: ${d.data[i].description}`);
+				}
+
+				if (typeof d.data[i].location === 'object' && !Array.isArray(d.data[i].location)) {
+					ipamData.push(`Address: ${d.data[i].location.address}`);
+				}
+
+				if (typeof d.data[i].nameservers === 'object' && !Array.isArray(d.data[i].nameservers)) {
+					ipamData.push(...d.data[i].nameservers.namesrv1.split(';').map(e => `Nameserver: ${e}`));
+				}
+
+				var thisAddressObj = new Address(thisAddressString, ipamData.join('\n'), thisAddress);
+
+				addresses.push(thisAddressObj);
+			} catch (e) {
+				console.error(`${thisAddressString} is not a valid IP address`);
+				console.error(e);
+			}
+		}
+
+		cb(null, addresses);
+	}).catch(err => {
+		cb(err, null);
+	});
+}
+
 module.exports.createDataDirs = createDataDirs;
 module.exports.getDataFiles = getDataFiles;
 module.exports.loadIPData = loadIPData;
 module.exports.loadDomainData = loadDomainData;
 module.exports.loadASNData = loadASNData;
+module.exports.loadIPAMData = loadIPAMData;

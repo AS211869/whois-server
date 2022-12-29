@@ -1,0 +1,9 @@
+{
+	"port": 43,
+	"ipam": {,
+		"enabled": false,
+		"url": "https://ipam.example.com/api/",
+		"appId": "",
+		"token": ""
+	}
+}
