@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-escape */
 const ipAddress = require('ip-address');
 const isDomain = require('is-domain');
 const net = require('net');
@@ -17,9 +18,11 @@ var domains = {};
 var asn = {};
 
 function updateData() {
+	let oldAddresses = addresses.slice();
 	addresses = [];
 	domains = {};
 	asn = {};
+
 	addresses.push(...util.loadIPData('ipv4'));
 	addresses.push(...util.loadIPData('ipv6'));
 	domains = util.loadDomainData();
@@ -27,6 +30,7 @@ function updateData() {
 
 	util.loadIPAMData(function(err, data) {
 		if (err) {
+			addresses = oldAddresses;
 			return console.error(err);
 		}
 
@@ -42,6 +46,44 @@ if (config.updateEveryMs) {
 	}, config.updateEveryMs);
 }
 
+if (config.dynamicPullInterval) {
+	var objectsToPull = [
+		...addresses.filter(a => a.hasPull()),
+		...Object.values(domains).filter(d => d.hasPull()),
+		...Object.values(asn).filter(a => a.hasPull())
+	].filter(e => !e._dynamic);
+
+	let run = 0;
+
+	console.log(`${objectsToPull.length} pull actions detected. Data pulls will happen every ${config.dynamicPullInterval / objectsToPull.length}ms in round-robin fashion.`);
+	console.log(`Objects to pull: \n${objectsToPull.map(o => o._name).join('\n')}`);
+
+	setInterval(() => {
+		let thisObj = objectsToPull[run];
+		let thisObjData = `Data retrieved at ${new Date()}\n\n`;
+		let thisCon = net.createConnection({
+			host: thisObj.getPull(),
+			port: thisObj.getPullPort(),
+			timeout: 5000
+		}, () => {
+			thisCon.write(`${thisObj._name}\r\n`);
+		}).on('data', (data) => {
+			thisObjData += data.toString();
+		}).on('end', () => {
+			util.writeDynamicPullData(thisObj._name, thisObj._type, thisObjData);
+		}).on('error', (err) => {
+			console.error(err);
+		});
+
+		setTimeout(() => {
+			if (thisCon && !thisCon.destroyed) thisCon.destroy();
+		}, 10000);
+
+		run++;
+		if (run === objectsToPull.length) run = 0;
+	}, config.dynamicPullInterval / objectsToPull.length);
+}
+
 /**
  * @param {net.Socket} conn The connection
  * @param {string} query The query
@@ -50,13 +92,28 @@ function answerIPQuery(conn, query) {
 	let type = 0;
 	/** @type {import('ip-address').Address4 | import('ip-address').Address6} */
 	let addr = null;
+	let cidr = null;
 
-	type = net.isIP(query);
+	if (query.includes('/') && query.match(/^[0-9a-f\.:]+\/([0-9]{1,3})$/)) {
+		cidr = query.match(/^[0-9a-f\.:]+\/([0-9]{1,3})$/)[1];
+	}
+
+	type = net.isIP(cidr ? query.split('/')[0] : query);
 	switch (type) {
 		case 4:
+			if (cidr > 32) {
+				conn.write('Invalid CIDR');
+				conn.destroy();
+				return;
+			}
 			addr = new ipAddress.Address4(query);
 			break;
 		case 6:
+			if (cidr > 128) {
+				conn.write('Invalid CIDR');
+				conn.destroy();
+				return;
+			}
 			addr = new ipAddress.Address6(query);
 			break;
 	}
@@ -103,7 +160,14 @@ function answerIPQuery(conn, query) {
 function answerDomainQuery(conn, query) {
 	if (query in domains) {
 		conn.write(domains[query].getDataText());
-		handleRefer(conn, domains[query]);
+		if (!domains[query].hasReferral()) {
+			if (`d_${query}` in domains) {
+				conn.write('\n\n');
+				conn.write(domains[`d_${query}`].getDataText());
+			}
+		} else {
+			handleRefer(conn, domains[query]);
+		}
 	} else {
 		conn.write('No information about that domain is available from this WHOIS server');
 	}
@@ -116,7 +180,14 @@ function answerDomainQuery(conn, query) {
 function answerASNQuery(conn, query) {
 	if (query in asn) {
 		conn.write(asn[query].getDataText());
-		handleRefer(conn, asn[query]);
+		if (!asn[query].hasReferral()) {
+			if (`d_${query}` in asn) {
+				conn.write('\n\n');
+				conn.write(asn[`d_${query}`].getDataText());
+			}
+		} else {
+			handleRefer(conn, asn[query]);
+		}
 	} else {
 		conn.write('No information about that ASN is available from this WHOIS server');
 	}
@@ -150,7 +221,9 @@ server.on('connection', (conn) => {
 		console.log(`${conn.remoteAddress}:${conn.remotePort} queried ${data.toString().trim()}`);
 		let query = data.toString().trim().toLowerCase();
 
-		if (net.isIP(query)) { // IP
+		if (net.isIP(query) ||
+		// eslint-disable-next-line no-useless-escape
+			(query.includes('/') && query.match(/^[0-9a-f\.:]+\/([0-9]{1,3})$/) && net.isIP(query.split('/')[0]))) { // IP
 			answerIPQuery(conn, query);
 		} else if (isDomain(query)) { // Domain
 			answerDomainQuery(conn, query);

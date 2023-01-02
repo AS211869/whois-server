@@ -1,6 +1,7 @@
 {
 	"port": 43,
 	"updateEveryMs": "900000",
+	"dynamicPullInterval": "7200000",
 	"ipam": {
 		"enabled": false,
 		"url": "https://ipam.example.com/api/",

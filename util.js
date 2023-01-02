@@ -13,20 +13,14 @@ function createDataDirs() {
 		fs.mkdirSync(path.join(__dirname, 'data'));
 	}
 
-	if (!fs.existsSync(path.join(__dirname, 'data', 'ipv4'))) {
-		fs.mkdirSync(path.join(__dirname, 'data', 'ipv4'));
-	}
+	var dirsToCreate = ['ipv4', 'ipv6', 'domain', 'asn'];
 
-	if (!fs.existsSync(path.join(__dirname, 'data', 'ipv6'))) {
-		fs.mkdirSync(path.join(__dirname, 'data', 'ipv6'));
-	}
+	for (var i = 0; i < dirsToCreate.length; i++) {
+		let thisDir = dirsToCreate[i];
 
-	if (!fs.existsSync(path.join(__dirname, 'data', 'domain'))) {
-		fs.mkdirSync(path.join(__dirname, 'data', 'domain'));
-	}
-
-	if (!fs.existsSync(path.join(__dirname, 'data', 'asn'))) {
-		fs.mkdirSync(path.join(__dirname, 'data', 'asn'));
+		if (!fs.existsSync(path.join(__dirname, 'data', thisDir))) {
+			fs.mkdirSync(path.join(__dirname, 'data', thisDir));
+		}
 	}
 }
 
@@ -47,7 +41,7 @@ function loadIPData(type) {
 
 	var ips = getDataFiles(type);
 	for (var i = 0; i < ips.length; i++) {
-		let thisAddressString = ips[i].replace(/-/g, ':').replace('_', '/');
+		let thisAddressString = ips[i].replace(/^d_/, '').replace(/-/g, ':').replace('_', '/');
 		try {
 			//console.log(thisAddressString);
 			var thisAddress;
@@ -61,7 +55,7 @@ function loadIPData(type) {
 
 			var thisAddressObj = new Address(thisAddressString, fs.readFileSync(
 				path.join(__dirname, 'data', type, ips[i]), 'utf-8'
-			), thisAddress);
+			), thisAddress, ips[i].startsWith(`d_`));
 
 			addresses.push(thisAddressObj);
 		} catch (e) {
@@ -78,9 +72,9 @@ function loadDomainData() {
 	var domains = {};
 
 	for (var i = 0; i < domainFiles.length; i++) {
-		domains[domainFiles[i].toLowerCase()] = new Domain(domainFiles[i], fs.readFileSync(
+		domains[domainFiles[i].toLowerCase()] = new Domain(domainFiles[i].replace(/^d_/, ''), fs.readFileSync(
 			path.join(__dirname, 'data', 'domain', domainFiles[i]), 'utf-8'
-		));
+		), domainFiles[i].startsWith(`d_`));
 	}
 
 	return domains;
@@ -91,9 +85,9 @@ function loadASNData() {
 	var asn = {};
 
 	for (var i = 0; i < asnFiles.length; i++) {
-		asn[asnFiles[i].toLowerCase()] = new ASN(asnFiles[i], fs.readFileSync(
+		asn[asnFiles[i].toLowerCase()] = new ASN(asnFiles[i].replace(/^d_/, ''), fs.readFileSync(
 			path.join(__dirname, 'data', 'asn', asnFiles[i]), 'utf-8'
-		));
+		), asnFiles[i].startsWith(`d_`));
 	}
 
 	return asn;
@@ -157,9 +151,21 @@ function loadIPAMData(cb) {
 	});
 }
 
+function writeDynamicPullData(objectName, type, data) {
+	let file = `d_${objectName.replace(/:/g, '-').replace('/', '_')}`;
+	fs.writeFile(path.join(__dirname, 'data', type, file), data, (err) => {
+		if (err) {
+			return console.error(err);
+		}
+
+		console.log(`Wrote dynamic pull data for ${objectName} to disk`);
+	});
+}
+
 module.exports.createDataDirs = createDataDirs;
-module.exports.getDataFiles = getDataFiles;
+//module.exports.getDataFiles = getDataFiles;
 module.exports.loadIPData = loadIPData;
 module.exports.loadDomainData = loadDomainData;
 module.exports.loadASNData = loadASNData;
 module.exports.loadIPAMData = loadIPAMData;
+module.exports.writeDynamicPullData = writeDynamicPullData;
